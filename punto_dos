@@ -1,0 +1,143 @@
+CREATE TABLE tabla_TIENDA (
+    codigo_tienda INT PRIMARY KEY,
+    nombre_tienda VARCHAR(50)
+);
+
+CREATE TABLE tabla_BEBIDA (
+    codigo_bebida INT PRIMARY KEY,
+    nombre_bebida VARCHAR(50)
+);
+
+CREATE TABLE tabla_BEBEDOR (
+    cedula BIGINT PRIMARY KEY,
+    nombre VARCHAR(50)
+);
+
+CREATE TABLE tabla_GUSTA (
+    cedula BIGINT,
+    codigo_bebida INT,
+    PRIMARY KEY (cedula, codigo_bebida),
+    FOREIGN KEY (cedula) REFERENCES tabla_BEBEDOR(cedula),
+    FOREIGN KEY (codigo_bebida) REFERENCES tabla_BEBIDA(codigo_bebida)
+);
+
+CREATE TABLE tabla_FRECUENTA (
+    cedula BIGINT,
+    codigo_tienda INT,
+    PRIMARY KEY (cedula, codigo_tienda),
+    FOREIGN KEY (cedula) REFERENCES tabla_BEBEDOR(cedula),
+    FOREIGN KEY (codigo_tienda) REFERENCES tabla_TIENDA(codigo_tienda)
+);
+
+CREATE TABLE tabla_VENDE (
+    codigo_tienda INT,
+    codigo_bebida INT,
+    precio FLOAT,
+    PRIMARY KEY (codigo_tienda, codigo_bebida),
+    FOREIGN KEY (codigo_tienda) REFERENCES tabla_TIENDA(codigo_tienda),
+    FOREIGN KEY (codigo_bebida) REFERENCES tabla_BEBIDA(codigo_bebida)
+);
+
+
+--consultas
+/*
+Los bebedores que no les gusta la colombiana.
+*/
+SELECT cedula, nombre 
+FROM tabla_BEBEDOR 
+WHERE cedula NOT IN (SELECT cedula 
+                     FROM tabla_GUSTA 
+                     WHERE codigo_bedida = (SELECT codigo_bebida 
+                                            FROM tabla_BEBIDA 
+                                            WHERE nombre_bebida = 'Colombiana')
+                    );
+
+/*
+Las fuentes de soda que no son frecuentadas por Andres Camilo Restrepo.
+*/
+SELECT codigo_tienda, nombre_tienda 
+FROM tabla_TIENDA 
+WHERE codigo_tienda NOT IN (SELECT codigo_tienda 
+                            FROM tabla_FRECUENTA 
+                            WHERE cedula = (SELECT cedula 
+                                             FROM tabla_BEBEDOR 
+                                             WHERE nombre = 'Andres Camilo Restrepo')
+                           );
+/*
+Los bebedores que les gusta al menos una bebida y que frecuentan al menos una tienda
+*/
+SELECT B.cedula, B.nombre 
+FROM tabla_BEBEDOR AS B 
+JOIN (
+    SELECT cedula 
+    FROM tabla_GUSTA 
+    UNION 
+    SELECT cedula 
+    FROM tabla_FRECUENTA
+    ) AS GF ON B.cedula = GF.cedula 
+GROUP BY B.cedula, B.nombre 
+HAVING COUNT(*) >= 1;
+
+/*
+Para cada bebedor, las bebidas que no le gustan.
+*/
+SELECT B.cedula, B.nombre, BD.nombre_bebida 
+FROM tabla_BEBEDOR AS B 
+CROSS JOIN tabla_BEBIDA AS BD 
+LEFT JOIN (
+    SELECT cedula, codigo_bedida 
+    FROM tabla_GUSTA
+    ) AS G ON B.cedula = G.cedula AND BD.codigo_bebida = G.codigo_bedida 
+WHERE G.codigo_bedida IS NULL 
+ORDER BY B.cedula, BD.codigo_bebida;
+
+/*
+Los bebedores que frecuentan solo las tiendas que frecuenta Luis Perez.
+*/
+SELECT F.cedula, B.nombre 
+FROM tabla_FRECUENTA AS F 
+JOIN tabla_BEBEDOR AS B ON F.cedula = B.cedula 
+WHERE F.codigo_tienda IN (SELECT codigo_tienda 
+                          FROM tabla_FRECUENTA 
+                          WHERE cedula = (SELECT cedula 
+                                           FROM tabla_BEBEDOR 
+                                           WHERE nombre = 'Luis Perez')
+                         )
+GROUP BY F.cedula, B.nombre 
+HAVING COUNT(DISTINCT F.codigo_tienda) = (
+    SELECT COUNT(DISTINCT codigo_tienda) 
+    FROM tabla_FRECUENTA 
+    WHERE cedula = (SELECT cedula 
+                     FROM tabla_BEBEDOR 
+                     WHERE nombre = 'Luis Perez')
+);
+
+/*
+Los bebedores que unicamente frecuentan las tiendas que unicamente sirven alguna bebida que
+le gusta.
+*/
+SELECT F.cedula, B.nombre 
+FROM tabla_FRECUENTA AS F 
+JOIN tabla_BEBEDOR AS B ON F.cedula = B.cedula 
+WHERE F.codigo_tienda IN (
+    SELECT DISTINCT V.codigo_tienda 
+    FROM tabla_VENDE AS V 
+    JOIN tabla_GUSTA AS G ON V.codigo_bebida = G.codigo_bedida 
+    WHERE G.cedula = F.cedula
+    AND NOT EXISTS (
+        SELECT * 
+        FROM tabla_VENDE 
+        WHERE codigo_tienda = V.codigo_tienda 
+        AND codigo_bebida NOT IN (
+            SELECT codigo_bedida 
+            FROM tabla_GUSTA 
+            WHERE cedula = G.cedula
+        )
+    )
+)
+GROUP BY F.cedula, B.nombre 
+HAVING COUNT(DISTINCT F.codigo_tienda) = (
+    SELECT COUNT(DISTINCT codigo_tienda) 
+    FROM tabla_FRECUENTA 
+    WHERE cedula = F.cedula
+);
